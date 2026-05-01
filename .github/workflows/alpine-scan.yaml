@@ -65,6 +65,7 @@ jobs:
             - openrc
 
           runcmd:
+            - echo "permit nopass clouduser as root" > /etc/doas.conf
             - mkdir -p /home/clouduser/.ssh
             - chown -R clouduser:clouduser /home/clouduser/.ssh
             - chmod 700 /home/clouduser/.ssh
@@ -75,8 +76,6 @@ jobs:
 
             # Fallback safety: ensure key perms are correct
             - chmod 600 /home/clouduser/.ssh/authorized_keys
-          runcmd:
-            - echo "permit nopass clouduser as root" > /etc/doas.conf
           EOF
 
           cat > meta-data <<EOF
