@@ -47,6 +47,7 @@ jobs:
 
       - name: Create cloud-init config
         run: |
+          SSH_KEY=$(cat id_rsa.pub)
           cat > user-data <<EOF
           #cloud-config
           users:
@@ -55,10 +56,25 @@ jobs:
               sudo: ALL=(ALL) NOPASSWD:ALL
               shell: /bin/sh
               ssh_authorized_keys:
-                - $(cat id_rsa.pub)
+              - ${SSH_KEY}
           ssh_pwauth: false
           disable_root: false
 
+          packages:
+            - openssh
+            - openrc
+
+          runcmd:
+            - mkdir -p /home/clouduser/.ssh
+            - chown -R clouduser:clouduser /home/clouduser/.ssh
+            - chmod 700 /home/clouduser/.ssh
+
+            # Ensure OpenSSH is enabled (Alpine uses OpenRC)
+            - rc-update add sshd default
+            - rc-service sshd start
+
+            # Fallback safety: ensure key perms are correct
+            - chmod 600 /home/clouduser/.ssh/authorized_keys
           runcmd:
             - echo "permit nopass clouduser as root" > /etc/doas.conf
           EOF
