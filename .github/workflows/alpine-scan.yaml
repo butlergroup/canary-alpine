@@ -39,7 +39,7 @@ jobs:
       - name: Download image
         run: |
           curl -L --retry 5 -o alpine.img \
-            https://dl-cdn.alpinelinux.org/alpine/v3.23/releases/cloud/generic_alpine-3.23.4-x86_64-bios-cloudinit-r0.qcow2
+            https://dl-cdn.alpinelinux.org/alpine/v3.23/releases/cloud/generic_alpine-3.23.4-x86_64-bios-cloudinit-metal-r0.qcow2
 
       - name: Generate SSH key
         run: |
@@ -71,14 +71,18 @@ jobs:
               content: ""
 
           runcmd:
+            - mkdir -p /tmp/diag
             - echo "permit nopass clouduser as root" > /etc/doas.conf
+
             - setup-sshd -c openssh
             - rc-update add sshd default
-            - rc-service sshd start
-            - (rc-service sshd start && echo READY > /tmp/ssh_ready) || true
-            - cloud-init status --long > /tmp/cloud-init-status.txt || true
-            - cat /var/log/cloud-init.log > /tmp/cloud-init.log || true
-            - cat /var/log/cloud-init-output.log > /tmp/cloud-init-output.log || true
+            - rc-service sshd start || true
+
+            - (rc-service sshd status && echo READY > /tmp/diag/ssh_ready) || true
+            - cloud-init collect-logs || true
+            - cloud-init status --long > /tmp/diag/cloud-init-status.txt || true
+            - cat /var/log/cloud.log > /tmp/diag/cloud.log || true
+            - cat /var/log/messages > /tmp/diag/messages.log || true
           EOF
 
           cat > meta-data <<EOF
@@ -102,9 +106,18 @@ jobs:
             -device virtio-net-pci,netdev=net0 \
             -nographic \
             -serial mon:stdio \
+            -serial file:serial.log \
             > vm.log 2>&1 &
 
           echo $! > vm.pid
+
+      - name: Collect cloud-init diagnostics
+        if: always()
+        run: |
+          scp -i id_rsa -P 2222 \
+            -o StrictHostKeyChecking=no \
+            clouduser@localhost:/tmp/diag/* \
+            ./ || true
 
       - name: Wait for SSH to be fully ready
         run: |
@@ -127,10 +140,12 @@ jobs:
         if: failure()
         run: |
           echo "---- cloud-init status ----"
-          cat ssh_ready || true
-          cat cloud-init-status.txt || true
-          cat cloud-init.log || true
-          cat cloud-init-output.log || true
+          ls -R . || true
+          cat ./serial.log || true
+          cat ./ssh_ready || true
+          cat ./cloud-init-status.txt || true
+          cat ./cloud-init.log || true
+          cat ./cloud-init-output.log || true
 
           echo "---- VM log ----"
           cat vm.log || true
