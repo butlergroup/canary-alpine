@@ -51,13 +51,16 @@ jobs:
           #cloud-config
           users:
             - name: clouduser
-              groups: [wheel]
+              groups: wheel
               sudo: ALL=(ALL) NOPASSWD:ALL
               shell: /bin/sh
               ssh_authorized_keys:
                 - $(cat id_rsa.pub)
           ssh_pwauth: false
           disable_root: false
+
+          runcmd:
+            - echo "permit nopass clouduser as root" > /etc/doas.conf
           EOF
 
           cat > meta-data <<EOF
@@ -65,7 +68,7 @@ jobs:
           local-hostname: alpine
           EOF
 
-          cloud-localds seed.iso user-data meta-data
+          cloud-localds -v --label CIDATA seed.iso user-data meta-data
 
       - name: Start alpine VM
         run: |
@@ -75,7 +78,7 @@ jobs:
             -machine type=q35,accel=tcg \
             -cpu max \
             -drive file=alpine.img,format=qcow2,if=virtio \
-            -drive file=seed.iso,format=raw,if=virtio \
+            -drive file=seed.iso,media=cdrom,if=ide,index=3 \
             -boot c \
             -netdev user,id=net0,hostfwd=tcp::2222-:22 \
             -device virtio-net-pci,netdev=net0 \
