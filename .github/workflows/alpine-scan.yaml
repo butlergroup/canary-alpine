@@ -39,7 +39,7 @@ jobs:
       - name: Download image
         run: |
           curl -L --retry 5 -o alpine.img \
-            https://dl-cdn.alpinelinux.org/alpine/v3.23/releases/cloud/generic_alpine-3.23.4-x86_64-bios-cloudinit-metal-r0.qcow2
+            https://dl-cdn.alpinelinux.org/alpine/v3.23/releases/cloud/generic_alpine-3.23.4-x86_64-bios-cloudinit-r0.qcow2
 
       - name: Generate SSH key
         run: |
@@ -71,18 +71,16 @@ jobs:
               content: ""
 
           runcmd:
-            - mkdir -p /tmp/diag
             - echo "permit nopass clouduser as root" > /etc/doas.conf
 
             - setup-sshd -c openssh
             - rc-update add sshd default
             - rc-service sshd start || true
-
-            - (rc-service sshd status && echo READY > /tmp/diag/ssh_ready) || true
-            - cloud-init collect-logs || true
-            - cloud-init status --long > /tmp/diag/cloud-init-status.txt || true
-            - cat /var/log/cloud.log > /tmp/diag/cloud.log || true
-            - cat /var/log/messages > /tmp/diag/messages.log || true
+            - rc-update add cloud-init default
+            - rc-update add cloud-init-local default
+            - rc-update add cloud-config default
+            - rc-update add cloud-final default
+            - rc-service cloud-init start || true
           EOF
 
           cat > meta-data <<EOF
@@ -110,14 +108,6 @@ jobs:
             > vm.log 2>&1 &
 
           echo $! > vm.pid
-
-      - name: Collect cloud-init diagnostics
-        if: always()
-        run: |
-          scp -i id_rsa -P 2222 \
-            -o StrictHostKeyChecking=no \
-            clouduser@localhost:/tmp/diag/* \
-            ./ || true
 
       - name: Wait for SSH to be fully ready
         run: |
