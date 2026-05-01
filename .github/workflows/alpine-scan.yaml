@@ -127,10 +127,10 @@ jobs:
         if: failure()
         run: |
           echo "---- cloud-init status ----"
-          cat /tmp/ssh_ready || true
-          cat /tmp/cloud-init-status.txt || true
-          cat /tmp/cloud-init.log || true
-          cat /tmp/cloud-init-output.log || true
+          cat ssh_ready || true
+          cat cloud-init-status.txt || true
+          cat cloud-init.log || true
+          cat cloud-init-output.log || true
 
           echo "---- VM log ----"
           cat vm.log || true
