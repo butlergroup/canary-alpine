@@ -63,19 +63,22 @@ jobs:
           packages:
             - openssh
             - openrc
+            - cloud-init
+            - cloud-init-openrc
+
+          write_files:
+            - path: /etc/runlevels/default/sshd
+              content: ""
 
           runcmd:
             - echo "permit nopass clouduser as root" > /etc/doas.conf
-            - mkdir -p /home/clouduser/.ssh
-            - chown -R clouduser:clouduser /home/clouduser/.ssh
-            - chmod 700 /home/clouduser/.ssh
-
-            # Ensure OpenSSH is enabled (Alpine uses OpenRC)
+            - setup-sshd -c openssh
             - rc-update add sshd default
             - rc-service sshd start
-
-            # Fallback safety: ensure key perms are correct
-            - chmod 600 /home/clouduser/.ssh/authorized_keys
+            - (rc-service sshd start && echo READY > /tmp/ssh_ready) || true
+            - cloud-init status --long > /tmp/cloud-init-status.txt || true
+            - cat /var/log/cloud-init.log > /tmp/cloud-init.log || true
+            - cat /var/log/cloud-init-output.log > /tmp/cloud-init-output.log || true
           EOF
 
           cat > meta-data <<EOF
@@ -122,7 +125,15 @@ jobs:
 
       - name: Dump VM logs
         if: failure()
-        run: cat vm.log || true
+        run: |
+          echo "---- cloud-init status ----"
+          cat /tmp/ssh_ready || true
+          cat /tmp/cloud-init-status.txt || true
+          cat /tmp/cloud-init.log || true
+          cat /tmp/cloud-init-output.log || true
+
+          echo "---- VM log ----"
+          cat vm.log || true
 
       - name: Run Trivy scan inside VM
         run: |
