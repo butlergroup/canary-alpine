@@ -68,7 +68,7 @@ jobs:
           local-hostname: alpine
           EOF
 
-          cloud-localds -v --label CIDATA seed.iso user-data meta-data
+          genisoimage -o seed.iso -V "CIDATA" user-data meta-data
 
       - name: Start alpine VM
         run: |
