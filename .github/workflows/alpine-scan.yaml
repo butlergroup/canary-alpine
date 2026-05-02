@@ -28,21 +28,26 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
+            qemu-system-x86 \
+            qemu-utils \
+            cloud-image-utils \
             curl \
+            libguestfs-tools \
+            guestmount \
             netcat-openbsd \
-            ca-certificates tar
+            ca-certificates 
 
-      - name: Download Alpine minirootfs
+      - name: Download Alpine
         run: |
-          curl -L --retry 5 -o alpine.tar.gz \
-            https://dl-cdn.alpinelinux.org/alpine/v3.23/releases/x86_64/alpine-minirootfs-3.23.4-x86_64.tar.gz
+          curl -L --retry 5 -o alpine.qcow2 \
+            https://dl-cdn.alpinelinux.org/alpine/v3.23/releases/cloud/generic_alpine-3.23.4-x86_64-bios-cloudinit-metal-r0.qcow2
 
-      - name: Extract root filesystem
+      - name: Mount qcow2 image
         run: |
           sudo mkdir -p /mnt/alpine-root
-          sudo tar -xzf alpine.tar.gz -C /mnt/alpine-root
+          sudo guestmount -a alpine.qcow2 -i --ro /mnt/alpine-root
 
-      - name: Run Trivy scan
+      - name: Run Trivy scan (offline rootfs)
         run: |
           curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh
 
@@ -50,6 +55,11 @@ jobs:
             --scanners vuln,misconfig \
             -f sarif \
             -o report.sarif
+
+      - name: Unmount qcow2
+        if: always()
+        run: |
+          sudo guestunmount /mnt/alpine-root || true
 
       - name: Upload SARIF to GitHub Security
         uses: github/codeql-action/upload-sarif@v4
