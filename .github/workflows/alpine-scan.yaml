@@ -28,140 +28,28 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            qemu-system-x86 \
-            qemu-utils \
-            cloud-image-utils \
             curl \
-            openssh-client \
             netcat-openbsd \
-            ca-certificates
+            ca-certificates tar
 
-      - name: Download image
+      - name: Download Alpine minirootfs
         run: |
-          curl -L --retry 5 -o alpine.img \
-            https://dl-cdn.alpinelinux.org/alpine/v3.23/releases/cloud/generic_alpine-3.23.4-x86_64-bios-cloudinit-r0.qcow2
+          curl -L --retry 5 -o alpine.tar.gz \
+            https://dl-cdn.alpinelinux.org/alpine/v3.23/releases/x86_64/alpine-minirootfs-3.23.4-x86_64.tar.gz
 
-      - name: Generate SSH key
+      - name: Extract root filesystem
         run: |
-          ssh-keygen -t rsa -b 4096 -f id_rsa -N ""
+          mkdir -p /mnt/alpine-root
+          sudo tar -xzf alpine.tar.gz -C /mnt/alpine-root
 
-      - name: Create cloud-init config
+      - name: Run Trivy scan
         run: |
-          SSH_KEY=$(cat id_rsa.pub)
-          cat > user-data <<EOF
-          #cloud-config
-          users:
-            - name: clouduser
-              groups: wheel
-              sudo: ALL=(ALL) NOPASSWD:ALL
-              shell: /bin/sh
-              ssh_authorized_keys:
-              - ${SSH_KEY}
-          ssh_pwauth: false
-          disable_root: false
-
-          packages:
-            - openssh
-            - openrc
-            - cloud-init
-            - cloud-init-openrc
-
-          write_files:
-            - path: /etc/runlevels/default/sshd
-              content: ""
-
-          runcmd:
-            - echo "permit nopass clouduser as root" > /etc/doas.conf
-
-            - setup-sshd -c openssh
-            - rc-update add sshd default
-            - rc-service sshd start || true
-            - rc-update add cloud-init default
-            - rc-update add cloud-init-local default
-            - rc-update add cloud-config default
-            - rc-update add cloud-final default
-            - rc-service cloud-init start || true
-          EOF
-
-          cat > meta-data <<EOF
-          instance-id: iid-local01
-          local-hostname: alpine
-          EOF
-
-          genisoimage -o seed.iso -V "CIDATA" user-data meta-data
-
-      - name: Start alpine VM
-        run: |
-          qemu-system-x86_64 \
-            -m 2048 \
-            -smp 2 \
-            -machine type=q35,accel=tcg \
-            -cpu max \
-            -drive file=alpine.img,format=qcow2,if=virtio \
-            -drive file=seed.iso,media=cdrom,if=ide,index=3 \
-            -boot c \
-            -netdev user,id=net0,hostfwd=tcp::2222-:22 \
-            -device virtio-net-pci,netdev=net0 \
-            -nographic \
-            -serial mon:stdio \
-            -serial file:serial.log \
-            > vm.log 2>&1 &
-
-          echo $! > vm.pid
-
-      - name: Wait for SSH to be fully ready
-        run: |
-          for i in {1..120}; do
-            if ssh -i id_rsa \
-              -o StrictHostKeyChecking=no \
-              -o ConnectTimeout=2 \
-              -o BatchMode=yes \
-              -p 2222 clouduser@localhost "echo ready" >/dev/null 2>&1; then
-              echo "✅ SSH is fully ready"
-              exit 0
-            fi
-            echo "⏳ Waiting for SSH..."
-            sleep 2
-          done
-          echo "❌ SSH failed to become ready"
-          exit 1
-
-      - name: Dump VM logs
-        if: failure()
-        run: |
-          echo "---- cloud-init status ----"
-          ls -R . || true
-          cat ./serial.log || true
-          cat ./ssh_ready || true
-          cat ./cloud-init-status.txt || true
-          cat ./cloud-init.log || true
-          cat ./cloud-init-output.log || true
-
-          echo "---- VM log ----"
-          cat vm.log || true
-
-      - name: Run Trivy scan inside VM
-        run: |
-          ssh -i id_rsa -p 2222 clouduser@localhost <<'EOF'
-          set -e
           curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh
-          ./bin/trivy rootfs / \
+
+          sudo ./bin/trivy rootfs /mnt/alpine-root \
             --scanners vuln,misconfig \
             -f sarif \
-            -o /tmp/report.sarif
-          EOF
-
-      - name: Copy report from VM
-        run: |
-          scp -i id_rsa -P 2222 \
-            -o StrictHostKeyChecking=no \
-            clouduser@localhost:/tmp/report.sarif \
-            report.sarif
-
-      - name: Stop VM
-        if: always()
-        run: |
-          kill $(cat vm.pid) || true
+            -o report.sarif
 
       - name: Upload SARIF to GitHub Security
         uses: github/codeql-action/upload-sarif@v4
