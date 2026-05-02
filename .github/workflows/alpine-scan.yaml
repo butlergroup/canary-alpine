@@ -39,7 +39,7 @@ jobs:
 
       - name: Extract root filesystem
         run: |
-          mkdir -p /mnt/alpine-root
+          sudo mkdir -p /mnt/alpine-root
           sudo tar -xzf alpine.tar.gz -C /mnt/alpine-root
 
       - name: Run Trivy scan
